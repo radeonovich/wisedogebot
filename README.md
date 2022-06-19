@@ -17,7 +17,7 @@ Bot is under the progress now.  Here is features development state:
 ⏳ Send accepted images in the channel with a sheduler  
 ⏳ Undo last accepted image  
 ⏳ SQL support  
-⏳ User stats with send/accepted/denies counters  
+⏳ User stats with send/accepted/denied counters  
   
   
 
@@ -43,8 +43,3 @@ Make sure that moderationQueue.txt and postQueue.txt files exist and are empty (
 Run main.py and write something to your bot.
 
 Done!  
-
-<br />
-
-----
-<div align="center">Generated using <a href="https://profilinator.rishav.dev/" target="_blank">Github Profilinator</a></div>
