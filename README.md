@@ -14,7 +14,7 @@ Bot is under the progress now.  Here is features development state:
 ✔️Receive images from users and store it  
 ✔️Moderate received images and store accepted images  
 ⏳ Post instantly from moderation mode  
-⏳ Send accepted images in the channel with a sheduler  
+⏳ Send accepted images in the channel with a scheduler  
 ⏳ Undo last accepted image  
 ⏳ SQL support  
 ⏳ User stats with send/accepted/denied counters  
