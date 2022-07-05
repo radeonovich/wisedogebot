@@ -1,13 +1,61 @@
 import telebot
 from telebot import types
+from pathlib import Path
 import logging
+import sqlite3
 
-logging.basicConfig(level=logging.info)  # set logger to log all info except telegram debug messages
+logging.basicConfig(level=logging.INFO)  # set logger to log all info except telegram debug messages
 
 with open("token.txt", 'r') as tokenFile:  # get bot token
     bot = telebot.TeleBot(tokenFile.read())
 channelName = '@testomeska'  # channel to post to
 moderators = [518283574]  # who can moderate
+
+
+def sqlite_connect():
+    conn = sqlite3.connect("database.db", check_same_thread=False)
+    conn.execute("pragma journal_mode=wal;")
+    return conn
+
+
+def init_sqlite():
+    conn = sqlite_connect()
+    cursor = conn.cursor()
+    cursor.execute('''CREATE TABLE SuggestionQueue \
+    (id integer primary key, user_id integer, username text, image text, extra text)''')
+    cursor.execute('''CREATE TABLE PostQueue \
+    (id integer primary key, user_id integer, username text, image text, extra text)''')
+    conn.commit()
+    conn.close()
+    return
+
+
+db = Path("./database.db")
+try:
+    db.resolve(strict=True)
+except FileNotFoundError:
+    logging.warning("Database not found, trying to create a new one.")
+    try:
+        init_sqlite()
+    except Exception as e:
+        logging.error("Failed to create database : ", e.__repr__(), e.args)
+        pass
+    else:
+        logging.info("Created database successfully.")
+
+
+def insertqueue(table:str, user_id:int, username:str, image:str, extra:str): # adds an element to some queue (suggestion or post)
+    conn = sqlite_connect()
+    cursor = conn.cursor()
+    cursor.execute('INSERT INTO ' + table + ' (user_id, username, image, extra) VALUES (?,?,?,?)', (user_id, username, image, extra))
+    conn.commit()
+
+
+def popqueue(table:str, image:str):
+    conn = sqlite_connect()
+    cursor = conn.cursor()
+    cursor.execute('DELETE FROM ' + table + ' WHERE image = ?', (image,))
+    conn.commit()
 
 
 def checkadmin(message):
@@ -25,10 +73,6 @@ def start(message):
                      reply_markup=markup)  # hello message
 
 
-imglist = [] # don't know how to avoid global variables here
-datalist = []
-
-
 def makebuttons(message):
     markup = types.ReplyKeyboardMarkup(resize_keyboard=True)
     item1 = types.KeyboardButton("Предложить")
@@ -41,7 +85,7 @@ def makebuttons(message):
 
 @bot.message_handler(content_types=["text"])
 def handle_admin_text(message):
-    global imglist, datalist
+    global user_id, username, image, extra
     if message.text.strip() == 'Предложить':
         bot.send_message(message.chat.id, 'Пришли картинку с волком, я добавлю ее в очередь модерации.')
 
@@ -55,45 +99,41 @@ def handle_admin_text(message):
             markup.add(item1)
             markup.add(item2)
             markup.add(item3)
-            with open("moderationQueue.txt", "r") as modQueueFile:
-                imglist = modQueueFile.readlines()  # list of image data, each element has format: image_id user_id
-            if len(imglist) != 0:
-                bot.send_message(message.chat.id, 'Включен режим модерации.')
-                datalist = imglist[0].split()
-                # take the last image data and split to [image_id, user_id]
-                # maybe dict would be better here
-                bot.send_photo(message.chat.id, photo=datalist[0])
-                bot.send_message(message.chat.id, 'Картинка от {0}id{1}'.format('', datalist[1]), reply_markup=markup)
-            else:
+
+            conn = sqlite_connect()
+            cursor = conn.cursor()
+            try:
+                row = cursor.execute(\
+                    'SELECT user_id, username, image, extra FROM SuggestionQueue ORDER BY id ASC LIMIT 1'\
+                    ).fetchall()[0] # get last image from suggested
+            except IndexError:
                 bot.send_message(message.chat.id, 'Предложка пуста.')
+            else:
+                user_id = row[0] # bad practice, better replace to a dictionary
+                username = row[1]
+                image = row[2]
+                extra = row[3]
+                bot.send_photo(message.chat.id, photo=image)
+                bot.send_message(message.chat.id, 'Картинка от {0} id{1}'.format(username, user_id), reply_markup=markup)
+
         else:
             bot.send_message(message.chat.id, 'Вы не можете модерировать.')
-    if checkadmin(message) and len(imglist) != 0:  # handling moderator decision
+    # handling moderator decision
+    if checkadmin(message):
 
-        if message.text.strip() == '+':
-            postQueueFile = open("postQueue.txt", "a")
-            postQueueFile.write(datalist[0]+'\n')
-            postQueueFile.close()
-            imglist.pop(0)
-            with open("moderationQueue.txt", "w") as modQueueFile:
-                for line in imglist:
-                    modQueueFile.write(line)
+        if message.text.strip() == '+': # will make bug if moderator sent + without the context of moderating
+            insertqueue(table='PostQueue', user_id=user_id, username=username, image=image, extra=extra)
             markup = makebuttons(message)
-            bot.send_message(message.chat.id, 'Картинка добавлена в очередь, image id=' + datalist[0], reply_markup=markup)
+            bot.send_message(message.chat.id, 'Картинка добавлена в очередь.' , reply_markup=markup)
 
         elif message.text.strip() == '-':
-            imglist.pop(0)
-            with open("moderationQueue.txt", "w") as modQueueFile:
-                for line in imglist:
-                    modQueueFile.write(line)
+            popqueue(table='SuggestionQueue', image=image)
             markup = makebuttons(message)
             bot.send_message(message.chat.id, 'Картинка снята с модерации.', reply_markup=markup)
 
-        elif message.text.strip() == 'Пропуск':
-            imglist.append(imglist.pop(0))  # move image to the start of list
-            with open("moderationQueue.txt", "w") as modQueueFile:
-                for line in imglist:
-                    modQueueFile.write(line)
+        elif message.text.strip() == 'Пропуск': # remove image from queue and add it to the end
+            popqueue(table='SuggestionQueue', image=image)
+            insertqueue(table='SuggestionQueue', user_id=user_id, username=username, image=image, extra=extra)
             markup = makebuttons(message)
             bot.send_message(message.chat.id, 'Картинка перемещена в начало очереди.', reply_markup=markup)
 
@@ -103,9 +143,7 @@ def handle_photo(message):
     received_image = message.photo[-1].file_id
     logging.info(
         'A photo has just received from user {0}, id {1}'.format(message.from_user.first_name, message.from_user.id))
-    with open("moderationQueue.txt", "a") as modQueueFile:
-        modQueueFile.write(received_image + ' ' + str(message.from_user.id) + '\n')
-        modQueueFile.close()
+    insertqueue(table='SuggestionQueue', user_id=message.from_user.id, username=message.from_user.username, image=received_image, extra='')
     bot.send_message(message.chat.id, 'Отправил на проверку.')
 
 
