@@ -1,15 +1,42 @@
 import telebot
 from telebot import types
 from pathlib import Path
+from sys import exit
 import logging
 import sqlite3
+import configparser
+config = configparser.ConfigParser()
+if Path("./config.ini").is_file():
+    config.read("./config.ini")
+else:
+    logging.basicConfig(level=logging.INFO)  # set logger to log all info except telegram debug messages
 
-logging.basicConfig(level=logging.INFO)  # set logger to log all info except telegram debug messages
+    config = configparser.ConfigParser() # init config file
 
-with open("token.txt", 'r') as tokenFile:  # get bot token
-    bot = telebot.TeleBot(tokenFile.read())
-channelName = '@testomeska'  # channel to post to
-moderators = [518283574]  # who can moderate
+    config.add_section('main')
+    config.set('main', 'token', '123456:ABC-DEF1234ghIkl-zyx57W2v1u123ew11')
+    config.set('main', 'channelName', '@mychannel')
+    config.set('main', 'moderators', '123456789 987654321 314159265')
+
+    logging.warning('No config file was found. Trying to create a new one...')
+    try:
+        with open("./config.ini", 'w') as configfile:
+            config.write(configfile)
+    except Exception as e:
+        logging.error('Failed to create config file: ', e.__repr__(), e.args)
+    else:
+        logging.warning('A new config file was created. Fill it with your data and start bot again.')
+    exit(0)
+
+
+token = config.get('main','token') # get bot token
+bot = telebot.TeleBot(token)
+# with open("token.txt", 'r') as tokenFile:  # get bot token
+#     bot = telebot.TeleBot(tokenFile.read())
+channelName = config.get('main', 'channelName') # channel to post to
+moderators = config.get('main', 'moderators').split() # who can moderate
+# channelName = '@testomeska'  # channel to post to
+# moderators = [518283574]  # who can moderate
 
 
 def sqlite_connect():
@@ -34,7 +61,7 @@ db = Path("./database.db")
 try:
     db.resolve(strict=True)
 except FileNotFoundError:
-    logging.warning("Database not found, trying to create a new one.")
+    logging.warning("Database not found, trying to create a new one...")
     try:
         init_sqlite()
     except Exception as e:
@@ -59,7 +86,7 @@ def popqueue(table:str, image:str):
 
 
 def checkadmin(message):
-    if message.from_user.id in moderators:
+    if str(message.from_user.id) in moderators:
         return True
     return False
 
