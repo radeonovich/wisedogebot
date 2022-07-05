@@ -29,18 +29,13 @@ else:
     exit(0)
 
 
-token = config.get('main','token') # get bot token
+token = config.get('main', 'token') # get bot token
 bot = telebot.TeleBot(token)
-# with open("token.txt", 'r') as tokenFile:  # get bot token
-#     bot = telebot.TeleBot(tokenFile.read())
 channelName = config.get('main', 'channelName') # channel to post to
 moderators = config.get('main', 'moderators').split() # who can moderate
-# channelName = '@testomeska'  # channel to post to
-# moderators = [518283574]  # who can moderate
-
 
 def sqlite_connect():
-    conn = sqlite3.connect("database.db", check_same_thread=False)
+    conn = sqlite3.connect("db/database.db", check_same_thread=False)
     conn.execute("pragma journal_mode=wal;")
     return conn
 
@@ -57,7 +52,7 @@ def init_sqlite():
     return
 
 
-db = Path("./database.db")
+db = Path("./db/database.db")
 try:
     db.resolve(strict=True)
 except FileNotFoundError:
