@@ -16,7 +16,7 @@ Bot is under the progress now.  Here is features development state:
 ⏳ Post instantly from moderation mode  
 ⏳ Send accepted images in the channel with a scheduler  
 ⏳ Undo last accepted image  
-⏳ SQL support  
+✔️SQL support  
 ⏳ User stats with send/accepted/denied counters  
   
   
