@@ -33,7 +33,11 @@ token = config.get('main', 'token') # get bot token
 bot = telebot.TeleBot(token)
 channelName = config.get('main', 'channelName') # channel to post to
 moderators = config.get('main', 'moderators').split() # who can moderate
-
+try: # ascii greeting in console
+    from art import * # pip install art
+    tprint('WiseDogeBot')
+except ImportError:
+    pass
 def sqlite_connect():
     conn = sqlite3.connect("db/database.db", check_same_thread=False)
     conn.execute("pragma journal_mode=wal;")

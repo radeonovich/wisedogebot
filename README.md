@@ -31,8 +31,6 @@ Install pyTelegrambotAPI:
 pip install pyTelegramBotAPI
 ```
 
-
-
 Run main.py. At first start a new config file will be generated. You need to open it and set your token, channel name and moderator id's list.
 Now you can run main.py again, and it will be ready to work with.
 
