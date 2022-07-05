@@ -2,7 +2,7 @@ import telebot
 from telebot import types
 import logging
 
-logging.basicConfig(level=logging.info)  # set logger to log all info except telegram debug messages
+logging.basicConfig(level=logging.INFO)  # set logger to log all info except telegram debug messages
 
 with open("token.txt", 'r') as tokenFile:  # get bot token
     bot = telebot.TeleBot(tokenFile.read())
