@@ -1,11 +1,11 @@
-import telebot
+import telebot  # PyTelegramBotAPI
 from telebot import types
-from pathlib import Path
-from sys import exit
-import logging
-import sqlite3
-import configparser
-
+from pathlib import Path  # to check if some paths exist
+from sys import exit  # to stop program if config is not filled
+import logging  # to log things
+import sqlite3  # to make queues of suggested and moderated posts
+import configparser  # to use config to set up token etc
+from os import mkdir
 config = configparser.ConfigParser()
 if Path("./config.ini").is_file():
     config.read("./config.ini")
@@ -60,11 +60,10 @@ def init_sqlite():
 
 
 db = Path("./db/database.db")
-try:
-    db.resolve(strict=True)
-except FileNotFoundError:
+if not db.is_file():
     logging.warning("Database not found, trying to create a new one...")
     try:
+        mkdir('db')
         init_sqlite()
     except Exception as e:
         logging.error("Failed to create database : ", e.__repr__(), e.args)
