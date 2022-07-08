@@ -6,11 +6,13 @@ import logging  # to log things
 import sqlite3  # to make queues of suggested and moderated posts
 import configparser  # to use config to set up token etc
 from os import mkdir
+
+logging.basicConfig(level=logging.INFO)  # set logger to log all info except telegram debug messages
+
 config = configparser.ConfigParser()
 if Path("./config.ini").is_file():
     config.read("./config.ini")
 else:
-    logging.basicConfig(level=logging.INFO)  # set logger to log all info except telegram debug messages
 
     config = configparser.ConfigParser()  # init config file
 
