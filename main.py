@@ -2,25 +2,30 @@ import telebot  # PyTelegramBotAPI
 from telebot import types
 from pathlib import Path  # to check if some paths exist
 from sys import exit  # to stop program if config is not filled
+from os import mkdir
 import logging  # to log things
 import sqlite3  # to make queues of suggested and moderated posts
 import configparser  # to use config to set up token etc
-from os import mkdir
+import schedule
+import threading
+import datetime
+import time
+
 
 logging.basicConfig(level=logging.INFO)  # set logger to log all info except telegram debug messages
 
-config = configparser.ConfigParser()
+config = configparser.ConfigParser()  # init configparser
 if Path("./config.ini").is_file():
     config.read("./config.ini")
 else:
-
-    config = configparser.ConfigParser()  # init config file
 
     config.add_section('main')
     config.set('main', 'token', '123456:ABC-DEF1234ghIkl-zyx57W2v1u123ew11')
     config.set('main', 'channelName', '@mychannel')
     config.set('main', 'moderators', '123456789 987654321 314159265')
-
+    config.set('main', 'begin_time', '12:00')
+    config.set('main', 'end_time', '23:00')
+    config.set('main', 'posting_interval', '3600')
     logging.warning('No config file was found. Trying to create a new one...')
     try:
         with open("./config.ini", 'w') as configfile:
@@ -36,6 +41,10 @@ token = config.get('main', 'token')  # get bot token
 bot = telebot.TeleBot(token)
 channelName = config.get('main', 'channelName')  # channel to post to
 moderators = config.get('main', 'moderators').split()  # who can moderate
+begin_time = config.get('main', 'begin_time')
+end_time = config.get('main', 'end_time')
+posting_interval = int(config.get('main', 'posting_interval'))
+
 try:  # ascii greeting in console
     from art import *  # pip install art
     tprint('WiseDogeBot')
@@ -92,23 +101,61 @@ def pop_queue(table: str, image: str):
     conn.commit()
 
 
+def run_continuously(interval=1): # auto posting parallel thread
+    cease_continuous_run = threading.Event()
+
+    class ScheduleThread(threading.Thread):
+        @classmethod
+        def run(cls):
+            while not cease_continuous_run.is_set():
+                schedule.run_pending()
+                time.sleep(interval)
+
+    continuous_thread = ScheduleThread()
+    continuous_thread.start()
+    return cease_continuous_run
+
+
+def background_job(begin_time, end_time): # post an image when the time comes
+    now_time = datetime.datetime.now()  # get current time
+    now_time = now_time.strftime('%H:%M')  # convert to string
+    # print(begin_time, now_time, end_time)
+    if begin_time <= now_time <= end_time:  # check if it in a posting time range
+        conn = sqlite_connect()
+        cursor = conn.cursor()
+        try:
+            row = cursor.execute(  # get an image from post queue
+                'SELECT user_id, username, image, extra FROM PostQueue ORDER BY id DESC LIMIT 1'
+            ).fetchall()[0]  # get first image from post queue
+        except IndexError:
+            logging.info(now_time + ' - nothing has been posted because of empty post queue. ')
+        else:
+            bot.send_photo(chat_id=channelName, photo=row[2])  # send to a channel
+            logging.info('{0} - An image with id {1} has been posted.'.format(now_time, row[2]))
+            pop_queue('PostQueue', row[2])  # remove image from post queue
+
+
+schedule.every(posting_interval).seconds.do(background_job, begin_time, end_time)  # start scheduler
+stop_run_continuously = run_continuously()
+
+
 def check_admin(message):
     if str(message.from_user.id) in moderators:
         return True
     return False
 
 
-@bot.message_handler(commands=["start"])
+@bot.message_handler(commands=["start"])  # handle /start command
 def start(message):
     logging.info("User {0}, id{1} entered /start".format(message.from_user.first_name, str(message.from_user.id)))
     markup = make_buttons(message)
     bot.send_message(
         message.chat.id,
-        'Здесь ты можешь предложить опубликовать свою мудрость Клыка.\nВыбери режим работы.',
+        'Здесь ты можешь предложить опубликовать свою мудрость Клыка.\n',
         reply_markup=markup)  # hello message
 
 
-def make_buttons(message):
+def make_buttons(message):  # makes action buttons
     markup = types.ReplyKeyboardMarkup(resize_keyboard=True)
     item1 = types.KeyboardButton("Предложить")
     markup.add(item1)
@@ -119,16 +166,16 @@ def make_buttons(message):
 
 
 @bot.message_handler(content_types=["text"])
-def handle_admin_text(message):
+def handle_admin_text(message):  # handle actions and moderating
     global user_id, username, image, extra
     if message.text.strip() == 'Предложить':
         bot.send_message(message.chat.id, 'Пришли картинку с волком, я добавлю ее в очередь модерации.')
 
     if message.text.strip() == 'Модерировать':
         if check_admin(message):
-            logging.warning("User {0}, id{1} started moderating".format(
-                message.from_user.first_name, str(message.from_user.id))
-            )
+            # logging.warning("User {0}, id{1} started moderating".format(
+            #     message.from_user.first_name, str(message.from_user.id))
+            # )
             markup = types.ReplyKeyboardMarkup(resize_keyboard=True)  # add buttons for moderation
             item1 = types.KeyboardButton("+")
             item2 = types.KeyboardButton("-")
@@ -176,6 +223,7 @@ def handle_admin_text(message):
                 'Картинка добавлена в очередь.',
                 reply_markup=markup
             )
+            pop_queue(table='SuggestionQueue', image=image)
 
         elif message.text.strip() == '-':
             pop_queue(table='SuggestionQueue', image=image)
@@ -219,3 +267,5 @@ def handle_photo(message):
 
 
 bot.polling(none_stop=True, interval=0)
+
+stop_run_continuously.set()  # scheduler thing

@@ -14,7 +14,7 @@ Bot is under the progress now.
 ✔️Receive images from users and store it  
 ✔️Moderate received images and store accepted images  
 ⏳ Post instantly from moderation mode  
-⏳ Send accepted images in the channel with a scheduler  
+✔ Send accepted images in the channel with a scheduler  
 ⏳ Undo last accepted image  
 ✔️SQL support  
 ⏳ User stats with send/accepted/denied counters  
@@ -23,8 +23,7 @@ Bot is under the progress now.
 
 
 
-### Setup  
-At the moment bot is most likely useless for you - there is no ability to post in the channel yet. But of course you can implement it yourself!
+### Setup
 
 Install pyTelegrambotAPI:
 ```
