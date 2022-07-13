@@ -14,10 +14,10 @@ Bot is under the progress now.
 ✔️Receive images from users and store it  
 ✔️Moderate received images and store accepted images  
 ⏳ Post instantly from moderation mode  
-✔ Send accepted images in the channel with a scheduler  
+✔️Send accepted images in the channel with a scheduler  
 ⏳ Undo last accepted image  
 ✔️SQL support  
-⏳ User stats with send/accepted/denied counters  
+✔️User stats with send/accepted/denied counters  
   
   
 
