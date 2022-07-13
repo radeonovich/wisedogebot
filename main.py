@@ -26,6 +26,7 @@ else:
     config.set('main', 'begin_time', '12:00')
     config.set('main', 'end_time', '23:00')
     config.set('main', 'posting_interval', '3600')
+    config.set('main', 'day_limit', '50')
     logging.warning('No config file was found. Trying to create a new one...')
     try:
         with open("./config.ini", 'w') as configfile:
@@ -38,12 +39,13 @@ else:
 
 
 token = config.get('main', 'token')  # get bot token
-bot = telebot.TeleBot(token)
+bot = telebot.TeleBot(token, parse_mode='HTML')
 channelName = config.get('main', 'channelName')  # channel to post to
 moderators = config.get('main', 'moderators').split()  # who can moderate
 begin_time = config.get('main', 'begin_time')
 end_time = config.get('main', 'end_time')
 posting_interval = int(config.get('main', 'posting_interval'))
+day_limit = int(config.get('main', 'day_limit'))  # limit of suggestions per day for user
 
 try:  # ascii greeting in console
     from art import *  # pip install art
@@ -61,10 +63,16 @@ def sqlite_connect():
 def init_sqlite():
     conn = sqlite_connect()
     cursor = conn.cursor()
+
     cursor.execute('''CREATE TABLE SuggestionQueue \
     (id integer primary key, user_id integer, username text, image text, extra text)''')
+
     cursor.execute('''CREATE TABLE PostQueue \
     (id integer primary key, user_id integer, username text, image text, extra text)''')
+
+    cursor.execute('''CREATE TABLE Stats \
+    (id integer primary key, user_id integer, username text, sent integer, sent_today integer, \
+    accepted integer, declined integer, is_banned integer)''')
     conn.commit()
     conn.close()
     return
@@ -130,9 +138,11 @@ def background_job(begin_time, end_time): # post an image when the time comes
         except IndexError:
             logging.info(now_time + ' - nothing has been posted because of empty post queue. ')
         else:
-            bot.send_photo(chat_id=channelName, photo=row[2])  # send to a channel
+            bot.send_photo(chat_id=channelName, photo=row[2], caption=row[3])  # send to a channel
             logging.info('{0} - An image with id {1} has been posted.'.format(now_time, row[2]))
             pop_queue('PostQueue', row[2])  # remove image from post queue
+
+
 
 
 schedule.every(posting_interval).seconds.do(background_job, begin_time, end_time)  # start scheduler
@@ -155,23 +165,44 @@ def start(message):
         reply_markup=markup)  # hello message
 
 
+@bot.message_handler(commands=["stats"])  # show stats
+def stats(message):
+    conn = sqlite_connect()
+    cursor = conn.cursor()
+    stats = cursor.execute('SELECT sent, sent_today, accepted, declined, is_banned FROM Stats WHERE user_id = ' +
+                           str(message.chat.id)).fetchall()[0]
+    bot.send_message(
+        message.chat.id,
+        'Статистика\nПредложено картинок: {0}\nПредложено сегодня: {1}\nПринято: {2}\nОтклонено: {3}'.format(
+        stats[0], stats[1], stats[2], stats[3]
+        )
+    )
 def make_buttons(message):  # makes action buttons
     markup = types.ReplyKeyboardMarkup(resize_keyboard=True)
     item1 = types.KeyboardButton("Предложить")
     markup.add(item1)
+    item3 = types.KeyboardButton('Моя статистика')
+    markup.add(item3)
     if check_admin(message):
         item2 = types.KeyboardButton("Модерировать")
         markup.add(item2)
     return markup
 
 
+last_message = ''
+
+
 @bot.message_handler(content_types=["text"])
 def handle_admin_text(message):  # handle actions and moderating
-    global user_id, username, image, extra
-    if message.text.strip() == 'Предложить':
-        bot.send_message(message.chat.id, 'Пришли картинку с волком, я добавлю ее в очередь модерации.')
+    global user_id, username, image, extra, last_message
 
-    if message.text.strip() == 'Модерировать':
+    if message.text.strip() == 'Предложить':
+        last_message = message.text.strip()
+        bot.send_message(message.chat.id, 'Пришли картинку с волком, я добавлю ее в очередь модерации.')
+    elif message.text.strip() == 'Моя статистика':
+        stats(message)
+    elif message.text.strip() == 'Модерировать':
+        last_message = message.text.strip()
         if check_admin(message):
             # logging.warning("User {0}, id{1} started moderating".format(
             #     message.from_user.first_name, str(message.from_user.id))
@@ -207,25 +238,13 @@ def handle_admin_text(message):  # handle actions and moderating
         else:
             bot.send_message(message.chat.id, 'Вы не можете модерировать.')
     # handling moderator decision
-    if check_admin(message):
-
+    elif check_admin(message):
         if message.text.strip() == '+':  # will make bug if moderator sent + without the context of moderating
-            insert_queue(
-                table='PostQueue',
-                user_id=user_id,
-                username=username,
-                image=image,
-                extra=extra
-            )
-            markup = make_buttons(message)
-            bot.send_message(
-                message.chat.id,
-                'Картинка добавлена в очередь.',
-                reply_markup=markup
-            )
-            pop_queue(table='SuggestionQueue', image=image)
-
+            # need to check if row exists
+            bot.send_message(message.chat.id, 'Добавьте подпись.')
+            last_message = message.text.strip()
         elif message.text.strip() == '-':
+            last_message = message.text.strip()
             pop_queue(table='SuggestionQueue', image=image)
             markup = make_buttons(message)
             bot.send_message(
@@ -234,7 +253,12 @@ def handle_admin_text(message):  # handle actions and moderating
                 reply_markup=markup
             )
 
+            conn = sqlite_connect()
+            cursor = conn.cursor()
+            cursor.execute('UPDATE Stats SET declined = declined + 1 WHERE user_id = ' + str(user_id))
+            conn.commit()
         elif message.text.strip() == 'Пропуск':  # remove image from queue and add it to the end
+            last_message = message.text.strip()
             pop_queue(table='SuggestionQueue', image=image)
             insert_queue(
                 table='SuggestionQueue',
@@ -249,6 +273,30 @@ def handle_admin_text(message):  # handle actions and moderating
                 'Картинка перемещена в начало очереди.',
                 reply_markup=markup
             )
+        elif last_message == '+' and message.text.strip() != last_message:
+            insert_queue(
+                table='PostQueue',
+                user_id=user_id,
+                username=username,
+                image=image,
+                extra='<tg-spoiler>' + message.text.strip() + '</tg-spoiler>'
+            )
+            markup = make_buttons(message)
+            bot.send_message(
+                message.chat.id,
+                'Картинка добавлена в очередь.',
+                reply_markup=markup
+            )
+            pop_queue(table='SuggestionQueue', image=image)
+
+            conn = sqlite_connect()
+            cursor = conn.cursor()
+            #is_in_stats = cursor.execute('SELECT EXISTS(SELECT 1 FROM Stats WHERE user_id = ' + str(user_id))
+            # if is_in_stats:
+            cursor.execute('UPDATE Stats SET accepted = accepted + 1 WHERE user_id = ' + str(user_id))
+            conn.commit()
+        else:
+            logging.debug('Unexpected message: ' + message.text.strip() + ' from user ' + str(message.chat.id))
 
 
 @bot.message_handler(content_types=['photo'])  # receive an image from user
@@ -263,7 +311,29 @@ def handle_photo(message):
         image=received_image,
         extra=''
     )
-    bot.send_message(message.chat.id, 'Отправил на проверку.')
+
+    conn = sqlite_connect()
+    cursor = conn.cursor()
+    is_in_stats = cursor.execute('SELECT EXISTS(SELECT 1 FROM Stats WHERE user_id = ' + str(message.from_user.id) +')').fetchall()[0][0]
+    if is_in_stats:
+        sent_today = cursor.execute('SELECT sent_today FROM Stats WHERE user_id = ' + \
+                                    str(message.from_user.id)).fetchall()[0][0]
+        if sent_today <= day_limit:
+            cursor.execute('UPDATE Stats SET sent = sent + 1, sent_today = sent_today + 1 WHERE user_id = ' + \
+                           str(message.from_user.id))
+            conn.commit()
+            bot.send_message(message.chat.id, 'Отправил на проверку.')
+        else:
+            bot.send_message(message.chat.id, 'Вы превысили лимит предложений на сегодня. Попробуйте завтра.')
+    else:
+        cursor.execute(
+            'INSERT INTO Stats (user_id, username, sent, sent_today, accepted, declined, is_banned)\
+             VALUES (?,?,?,?,?,?,?)',
+            (message.from_user.id, message.from_user.username, 1, 1, 0, 0, 0)
+        )
+        conn.commit()
+        logging.info('Added a new user @' + message.from_user.username + ' in stats.')
+        bot.send_message(message.chat.id, 'Отправил на проверку.')
 
 
 bot.polling(none_stop=True, interval=0)

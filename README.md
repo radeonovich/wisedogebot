@@ -24,6 +24,7 @@ Bot is under the progress now.
 
 
 ### Setup
+First you need to create a bot using @BotFather. Add it to your channel and allow it to post messages.
 
 Install pyTelegrambotAPI:
 ```
